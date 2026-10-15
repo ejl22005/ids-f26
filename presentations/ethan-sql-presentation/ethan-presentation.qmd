@@ -1,0 +1,448 @@
+---
+title: "Introduction to SQL Database Operations"
+author: "Ethan Liu"
+
+jupyter: python3
+
+execute:
+  enabled: true
+  echo: true
+  output: true
+  warning: true
+  error: true
+
+format:
+  revealjs:
+    theme: white
+    highlight-style: pygments
+    center: false
+    transition: slide
+    width: 1920
+    height: 1080
+    margin: 0.04
+    hash: true
+    code-fold: false
+    code-overflow: wrap
+    code-block-background: true
+    code-line-numbers: false
+---
+
+## About Me {data-background-color="#ffffff" data-background-foreground="#111111"}
+Ethan Liu
+
+Senior majoring in Statistical Data Science, Concentration in Advanced Statistics
+Hometown: Canton, CT
+
+---
+
+## Presentation Outline {data-background-color="#ffffff" data-background-foreground="#111111"}
+Foundations & DDL
+
+CRUD, Queries & Joins
+
+Advanced SQL Concepts
+
+Architecture & Integrity
+
+Discussion & Questions
+
+---
+
+## Relational Databases & SQL {data-background-color="#ffffff" data-background-foreground="#111111"}
+What is SQL?
+
+SQL (Structured Query Language) is used with relational databases, which store data in tables that relate to each other through shared keys. In a relational model, each table represents one type of entity, and relationships are formed using primary keys and foreign keys. This structure organizes the data and makes it easy to query across multiple connected tables.
+
+---
+
+## Relational Databases & SQL {data-background-color="#ffffff" data-background-foreground="#111111"}
+Key - A key is a column or set of columns that uniquely identifies or connects rows in a database table.
+A primary key guarantees each row is unique and can be referenced reliably.
+A foreign key links one table to another by pointing to the other table’s primary key.
+
+---
+
+## Relational Databases & SQL {data-background-color="#ffffff" data-background-foreground="#111111"}
+
+SQL is Tabular: rows and columns
+
+SQL is Declarative: specify what, not how
+
+SQL is Essential: PostgreSQL, MySQL, SQLite, Oracle, SQL Server
+
+---
+
+## Language Subsets {data-background-color="#ffffff" data-background-foreground="#111111"}
+DDL (Data Definition Language)
+
+CREATE TABLE students (
+  id INT PRIMARY KEY,
+  name VARCHAR(50)
+);
+
+DML (Data Manipulation Language)
+
+INSERT INTO students VALUES (1, 'Alex Smith');
+
+SELECT * FROM students;
+
+
+---
+
+## CRUD: Streamlined Operations Model {data-background-color="#ffffff" data-background-foreground="#111111"}
+Operation	SQL Command	Function
+
+Create	`INSERT INTO`	Adds new rows
+
+Read	`SELECT`	Queries records
+
+Update	`UPDATE ... SET`	Modifies rows
+
+Delete	`DELETE FROM`	Removes rows
+
+---
+
+## Data Querying & Filtering {data-background-color="#ffffff" data-background-foreground="#111111"}
+
+
+Avoid `SELECT *`
+
+`WHERE` filters rows before output
+
+`ORDER` BY and LIMIT for paging
+
+What to notice: the WHERE clause filters rows before aggregation or ordering; ORDER BY and LIMIT affect only the returned result set.
+Pitfalls to call out: SELECT * hides which columns are used; unindexed WHERE columns can make the query slow.
+
+---
+
+## Query Preview {data-background-color="#ffffff" data-background-foreground="#111111"}
+`SELECT *` is a quick way to inspect all columns in a table.
+`LIMIT 20` keeps the preview small so we can focus on structure without being overwhelmed.
+```{python}
+import duckdb
+duckdb.sql("SELECT * FROM read_csv_auto('erm2-nwe9.csv') LIMIT 20").df()
+```
+
+---
+
+COUNT(*) with GROUP BY shows which ZIP codes generate the most complaints, and ORDER BY … DESC ranks them
+```{python}
+import duckdb
+duckdb.sql("""
+    SELECT incident_zip, COUNT(*) AS total_complaints
+    FROM read_csv_auto('erm2-nwe9.csv')
+    GROUP BY incident_zip
+    ORDER BY total_complaints DESC
+    LIMIT 10;
+""")
+
+```
+
+---
+
+`GROUP BY` `complaint_type` shows that noise complaints clearly lead.
+Sorting by `total_complaints` `DESC` highlights which problems matter most for resource allocation or further analysis.
+```{python}
+duckdb.sql("""SELECT complaint_type, COUNT(*) AS total_complaints
+FROM read_csv_auto('erm2-nwe9.csv')
+GROUP BY complaint_type
+ORDER BY total_complaints DESC
+LIMIT 10;
+""")
+```
+
+---
+
+## Multi-Table JOIN Operations {data-background-color="#ffffff" data-background-foreground="#111111"}
+INNER JOIN — intersection
+
+LEFT JOIN — preserve left table
+
+RIGHT JOIN — preserve right table
+
+FULL OUTER JOIN — union of both
+
+---
+
+NULL, empty strings, and placeholder values like '00000' all represent “bad” ZIPs and must be filtered out.
+```{python}
+duckdb.sql("""
+SELECT incident_zip, unique_key, created_date, complaint_type, descriptor
+FROM (
+    SELECT CAST(incident_zip AS VARCHAR) AS incident_zip, *
+    FROM read_csv_auto('erm2-nwe9.csv')
+)
+WHERE incident_zip IS NULL
+    OR incident_zip = ''
+    OR incident_zip = '00000';
+""")
+
+
+```
+
+---
+
+This query returns a single number showing how many ZIP values need fixing.
+```{python}
+duckdb.sql("""
+SELECT COUNT(*) AS missing_zip_count
+FROM (
+    SELECT CAST(incident_zip AS VARCHAR) AS incident_zip
+    FROM read_csv_auto('erm2-nwe9.csv')
+)
+WHERE incident_zip IS NULL
+    OR incident_zip = ''
+    OR incident_zip = '00000';
+""")
+```
+
+---
+
+GROUP BY summarizes the relevant statistic.
+
+Sorting without LIMIT shows the full distribution, which is helpful for understanding not just the top ZIPs but the overall spread of complaint volume.
+```{python}
+duckdb.sql("""SELECT incident_zip, COUNT(*) AS total
+FROM read_csv_auto('erm2-nwe9.csv')
+GROUP BY incident_zip
+ORDER BY total DESC;
+""")
+```
+
+---
+
+## Aggregation {data-background-color="#ffffff" data-background-foreground="#111111"}
+COUNT()
+
+SUM()
+
+AVG()
+
+MIN()
+
+MAX()
+
+---
+
+## Aggregation {data-background-color="#ffffff" data-background-foreground="#111111"}
+HAVING filters groups after aggregation; WHERE filters rows before grouping.
+
+---
+
+Ranking categories by frequency lets us easily which complaint types dominate the dataset and therefore warrant attention or resources.
+```{python}
+duckdb.sql("""SELECT complaint_type, COUNT(*) AS total_requests
+FROM read_csv_auto('erm2-nwe9.csv')
+GROUP BY complaint_type
+ORDER BY total_requests DESC;
+""")
+```
+
+---
+
+We convert dates into numeric day counts. julian() lets learners measures durations by subtracting two timestamps.
+
+Filtering out NULL closed dates prevents failed or distorted math.
+```{python}
+duckdb.sql("""SELECT complaint_type,
+       AVG(julian(closed_date) - julian(created_date)) AS avg_days_to_close
+FROM read_csv_auto('erm2-nwe9.csv')
+WHERE closed_date IS NOT NULL
+GROUP BY complaint_type
+ORDER BY avg_days_to_close DESC;
+""")
+```
+
+---
+
+This query uses a subquery to compute a benchmark. HAVING compares each group’s count against the overall average.
+
+It highlights ZIP codes with unusually high activity.
+```{python}
+duckdb.sql("""SELECT incident_zip, COUNT(*) AS total
+FROM read_csv_auto('erm2-nwe9.csv')
+GROUP BY incident_zip
+HAVING total > (
+    SELECT AVG(zip_count)
+    FROM (
+        SELECT incident_zip, COUNT(*) AS zip_count
+        FROM read_csv_auto('erm2-nwe9.csv')
+        GROUP BY incident_zip
+    )
+);
+""")
+```
+
+---
+
+## Subqueries & Nested Queries {data-background-color="#ffffff" data-background-foreground="#111111"}
+
+A subquery is a query inside another query used when a result is needed before the outer query can run. They let you filter, compute, or reshape data in stages, often appearing inside SELECT, FROM, or WHERE clauses. Commands involved include SELECT (...), nested WHERE filters, and inline derived tables.
+
+---
+
+## Common Table Expressions (CTEs) {data-background-color="#ffffff" data-background-foreground="#111111"}
+
+CTEs, created with WITH ... AS, give a temporary named result that makes complex queries easier to read and reuse. It’s like defining a mathematical variable for a query step, then using it in the main query. CTEs are valuable because they break down multi‑step logic without creating permanent tables.
+
+---
+
+## Window Functions {data-background-color="#ffffff" data-background-foreground="#111111"}
+
+Window functions compute values across related rows without collapsing them into a single group, unlike GROUP BY. They are useful in calculating totals, rankings, moving averages, and comparisons using commands such as OVER(), PARTITION BY, and ORDER BY.
+
+
+---
+
+## Database Indexing & Performance {data-background-color="#ffffff" data-background-foreground="#111111"}
+
+Indexes are like bookmarks that help the database find rows faster without having to scan the entire table. They improve performance on frequently filtered columns using commands like CREATE INDEX and are especially useful for large datasets. Note that indexing speeds up reads but adds overhead to writes.
+
+---
+
+CREATE TABLE … AS creates a database table that makes indexing easier.
+
+CREATE INDEX shows us how to use an index to speed up lookups on frequently queried columns like ZIP codes.
+```{python}
+duckdb.sql("DROP TABLE IF EXISTS requests2;")
+
+duckdb.sql("""
+CREATE TABLE requests2 AS
+SELECT *
+FROM read_csv_auto('erm2-nwe9.csv');
+""")
+
+duckdb.sql("DROP INDEX IF EXISTS idx_requests_zip;")
+
+duckdb.sql("""
+CREATE INDEX idx_requests_zip ON requests2(incident_zip);
+""")
+
+duckdb.sql("""
+WITH optimized AS (
+    SELECT unique_key,
+           created_date,
+           agency,
+           complaint_type,
+           incident_zip
+    FROM requests2
+    WHERE incident_zip = '10027'
+)
+SELECT *
+FROM optimized
+LIMIT 20;
+""")
+```
+
+---
+
+EXPLAIN shows us how DuckDB wants to run the query so that we can gauge its efficiency and practicality before proceeding.
+```{python}
+duckdb.sql("""
+EXPLAIN
+SELECT *
+FROM read_csv_auto('erm2-nwe9.csv')
+WHERE incident_zip = '10027';
+""")
+```
+
+---
+
+The CTE (WITH optimized AS (...)) is just a readable wrapper around a filtered query. It names the filtered subset so the final SELECT is cleaner and easier to understand.
+```{python}
+duckdb.sql("DROP TABLE IF EXISTS requests;")
+duckdb.sql("""
+CREATE TABLE requests AS
+SELECT *
+FROM read_csv_auto('erm2-nwe9.csv');
+""")
+duckdb.sql("DROP INDEX IF EXISTS idx_requests_zip;")
+duckdb.sql("""
+CREATE INDEX idx_requests_zip ON requests(incident_zip);
+""")
+duckdb.sql("""
+WITH optimized AS (
+    SELECT unique_key,
+           created_date,
+           agency,
+           complaint_type,
+           incident_zip
+    FROM requests2
+    WHERE incident_zip = '10027'
+)
+SELECT *
+FROM optimized
+LIMIT 10;
+""")
+```
+
+---
+
+Combining WHERE clauses is effective in narrowing the dataset to exactly the slice we find important. Column filter for conciseness of display
+```{python}
+duckdb.sql("""
+SELECT
+    unique_key,
+    created_date,
+    agency,
+    complaint_type,
+    descriptor,
+    incident_zip
+FROM read_csv_auto('erm2-nwe9.csv')
+WHERE agency = 'NYPD'
+  AND complaint_type = 'Noise - Residential'
+LIMIT 20;
+""")
+```
+
+---
+
+## Database Normalization & Views {data-background-color="#ffffff" data-background-foreground="#111111"}
+Normalization is the practice of organizing data into well structured tables that reduce redundancy and prevent update anomalies. It is based on rules like 1NF, 2NF, and 3NF to ensure each table stores one clear concept. Views, created with CREATE VIEW, appear as virtual tables that contain cleaned or simplified data without duplicating storage.
+
+
+---
+
+## Database Security & SQL Injection {data-background-color="#ffffff" data-background-foreground="#111111"}
+
+Database security focuses on protecting data from unauthorized access, misuse, or corruption through authentication, permissions, and encryption.
+SQL injection is a vulnerability where attackers insert malicious SQL into user inputs, causing queries unintended by the authors to run. To prevent it, parameterized queries are used (e.g., using prepared statements) instead of directly embedding user input into SQL strings.
+
+---
+
+## Data Integrity & ACID {data-background-color="#ffffff" data-background-foreground="#111111"}
+Atomicity - A transaction must complete entirely or not at all. No possibility of partial updates.
+
+Consistency - Every transaction must move the database from one valid state to another without breaking rules or constraints.
+
+Isolation - Transactions run as if they are alone, avoiding interference from other simultaneous operations.
+
+Durability - Once a transaction is committed, its results are permanently saved, even if the system crashes.
+
+---
+
+## Works Cited {data-background-color="#ffffff" data-background-foreground="#111111"}
+NYC Open Data – 311 Service read_csv_auto('erm2-nwe9.csv')  
+New York City Open Data. 311 Service read_csv_auto('erm2-nwe9.csv') from 2020 to Present.  
+https://data.cityofnewyork.us/Social-Services/311-Service-read_csv_auto('erm2-nwe9.csv')-from-2020-to-Present/erm2-nwe9
+
+PostgreSQL Documentation  
+PostgreSQL Global Development Group. PostgreSQL 16 Documentation.  
+https://www.postgresql.org/docs/
+
+SQLite Documentation  
+SQLite Consortium. SQLite Documentation.  
+https://www.sqlite.org/docs.html
+
+MySQL Reference Manual  
+Oracle Corporation. MySQL 8.0 Reference Manual.  
+https://dev.mysql.com/doc/
+
+ACID Properties (Database Transactions)  
+Haerder, T., & Reuter, A. Principles of Transaction-Oriented Database Recovery.  
+ACM Computing Surveys, 1983.
+
+Relational Model Foundations  
+Codd, E. F. A Relational Model of Data for Large Shared Data Banks.  
+Communications of the ACM, 1970.
